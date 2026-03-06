@@ -246,6 +246,7 @@
     <div class="subtitle">Health scoring · Tier classification · Workload routing</div>
   </div>
   <div class="last-update" id="last-update">Connecting...</div>
+  <button onclick="logout()" style="margin-left:16px;background:transparent;border:1px solid var(--border);color:var(--muted);padding:6px 14px;border-radius:6px;cursor:pointer;font-size:0.8rem;">Logout</button>
 </header>
 
 <main>
@@ -285,7 +286,16 @@
 </main>
 
 <script>
-  const API = 'http://localhost:8080';
+  const API = '';
+  const token = localStorage.getItem('gpu_token');
+  if (!token) { window.location.href = '/login'; }
+  const authHeaders = { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' };
+
+  function logout() {
+    localStorage.removeItem('gpu_token');
+    window.location.href = '/login';
+  }
+
   let selectedUUID = null;
   let allGPUs = [];
 
@@ -354,7 +364,7 @@
 
   async function fetchFleet() {
     try {
-      const r = await fetch(`${API}/fleet/summary`);
+      const r = await fetch(`${API}/fleet/summary`, { headers: authHeaders });
       const data = await r.json();
       allGPUs = data.gpus;
 
@@ -395,7 +405,7 @@
   async function refreshDetail() {
     if (!selectedUUID) return;
     try {
-      const r = await fetch(`${API}/gpu/${selectedUUID}/health`);
+      const r = await fetch(`${API}/gpu/${selectedUUID}/health`, { headers: authHeaders });
       const g = await r.json();
       const m = g.metrics;
       document.getElementById('detail-panel').classList.add('open');
@@ -430,7 +440,7 @@
 
   async function loadWorkloadTypes() {
     try {
-      const r = await fetch(`${API}/workload/types`);
+      const r = await fetch(`${API}/workload/types`, { headers: authHeaders });
       const types = await r.json();
       const sel = document.getElementById('workload-select');
       sel.innerHTML = types.map(t => `<option value="${t}">${t}</option>`).join('');
@@ -442,7 +452,7 @@
     try {
       const r = await fetch(`${API}/workload/recommend`, {
         method: 'POST',
-        headers: {'Content-Type': 'application/json'},
+        headers: authHeaders,
         body: JSON.stringify({workload_type: workload})
       });
       const data = await r.json();

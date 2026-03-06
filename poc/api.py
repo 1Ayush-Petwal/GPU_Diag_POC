@@ -3,7 +3,7 @@ FastAPI backend — serves live health scores from the mock simulator.
 Run with: uvicorn api:app --reload --port 8080
 """
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Header, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
@@ -14,6 +14,21 @@ from simulator import get_all_snapshots, get_gpu_label, GPU_PROFILES
 from scorer import score, WORKLOAD_REQUIREMENTS
 
 app = FastAPI(title="GPU Diagnostic API", version="1.0")
+
+# ---------------------------------------------------------------------------
+# Auth — hardcoded test credentials (replace with real auth before production)
+# ---------------------------------------------------------------------------
+
+TEST_USERS = {
+    "demo":  "gpu-diag-2024",
+    "admin": "admin123",
+}
+VALID_TOKEN = "poc-demo-token-2024"
+
+
+def require_auth(authorization: str = Header(None)):
+    if authorization != f"Bearer {VALID_TOKEN}":
+        raise HTTPException(status_code=401, detail="Unauthorized")
 
 app.add_middleware(
     CORSMiddleware,
@@ -59,8 +74,17 @@ def _build_health(snap, include_snapshot=False):
     return out
 
 
+@app.post("/auth/login")
+def login(body: dict):
+    user = body.get("username", "")
+    pwd  = body.get("password", "")
+    if TEST_USERS.get(user) == pwd:
+        return {"token": VALID_TOKEN, "user": user}
+    raise HTTPException(status_code=401, detail="Invalid username or password")
+
+
 @app.get("/fleet/summary")
-def fleet_summary():
+def fleet_summary(_: None = Depends(require_auth)):
     snapshots = get_all_snapshots()
     gpus = [_build_health(s) for s in snapshots]
 
@@ -85,7 +109,7 @@ def fleet_summary():
 
 
 @app.get("/gpu/{uuid}/health")
-def gpu_health(uuid: str):
+def gpu_health(uuid: str, _: None = Depends(require_auth)):
     snapshots = get_all_snapshots()
     snap = next((s for s in snapshots if s.uuid == uuid), None)
     if not snap:
@@ -94,18 +118,18 @@ def gpu_health(uuid: str):
 
 
 @app.get("/fleet/tiers")
-def fleet_tiers():
+def fleet_tiers(_: None = Depends(require_auth)):
     snapshots = get_all_snapshots()
     return [_build_health(s) for s in snapshots]
 
 
 @app.get("/workload/types")
-def workload_types():
+def workload_types(_: None = Depends(require_auth)):
     return list(WORKLOAD_REQUIREMENTS.keys())
 
 
 @app.post("/workload/recommend")
-def workload_recommend(body: dict):
+def workload_recommend(body: dict, _: None = Depends(require_auth)):
     workload = body.get("workload_type", "")
     if workload not in WORKLOAD_REQUIREMENTS:
         raise HTTPException(status_code=400, detail=f"Unknown workload type: {workload}")
@@ -130,6 +154,12 @@ def workload_recommend(body: dict):
             })
     results.sort(key=lambda x: x["score"], reverse=True)
     return {"workload": workload, "recommended": results}
+
+
+@app.get("/login")
+def login_page():
+    html_path = os.path.join(os.path.dirname(__file__), "login.html")
+    return FileResponse(html_path)
 
 
 @app.get("/")
