@@ -1,0 +1,473 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>GPU Diagnostic Dashboard</title>
+  <style>
+    :root {
+      --bg: #0f1117;
+      --surface: #1a1d27;
+      --border: #2a2d3d;
+      --text: #e2e8f0;
+      --muted: #64748b;
+      --green: #22c55e;
+      --teal: #14b8a6;
+      --blue: #3b82f6;
+      --yellow: #eab308;
+      --orange: #f97316;
+      --red: #ef4444;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: var(--bg); color: var(--text); font-family: 'Segoe UI', system-ui, sans-serif; }
+
+    header {
+      padding: 20px 32px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+    header h1 { font-size: 1.3rem; font-weight: 600; }
+    header .subtitle { color: var(--muted); font-size: 0.85rem; }
+    .live-dot {
+      width: 8px; height: 8px; background: var(--green);
+      border-radius: 50%; animation: pulse 2s infinite;
+    }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; } 50% { opacity: 0.3; }
+    }
+    .last-update { margin-left: auto; color: var(--muted); font-size: 0.8rem; }
+
+    main { padding: 24px 32px; max-width: 1400px; margin: 0 auto; }
+
+    .summary-bar {
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      gap: 16px;
+      margin-bottom: 28px;
+    }
+    .stat-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 16px 20px;
+    }
+    .stat-card .label { font-size: 0.75rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; }
+    .stat-card .value { font-size: 2rem; font-weight: 700; margin-top: 4px; }
+    .stat-card .sub { font-size: 0.78rem; color: var(--muted); margin-top: 2px; }
+
+    .section-title {
+      font-size: 0.85rem;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--muted);
+      margin-bottom: 14px;
+      margin-top: 28px;
+    }
+
+    .gpu-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+      gap: 16px;
+    }
+
+    .gpu-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 18px 20px;
+      cursor: pointer;
+      transition: border-color 0.2s, transform 0.1s;
+    }
+    .gpu-card:hover { border-color: #4a4d5d; transform: translateY(-1px); }
+    .gpu-card.selected { border-color: #4f6ef7; }
+
+    .gpu-card-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      margin-bottom: 14px;
+    }
+    .gpu-name { font-weight: 600; font-size: 0.95rem; }
+    .gpu-model { font-size: 0.78rem; color: var(--muted); margin-top: 2px; }
+
+    .tier-badge {
+      font-size: 0.72rem;
+      font-weight: 600;
+      padding: 3px 10px;
+      border-radius: 20px;
+      white-space: nowrap;
+    }
+
+    .score-row {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 14px;
+    }
+    .score-circle {
+      width: 56px; height: 56px;
+      border-radius: 50%;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      font-weight: 700;
+      font-size: 1.1rem;
+      flex-shrink: 0;
+      border: 3px solid;
+    }
+    .score-circle .score-label { font-size: 0.6rem; font-weight: 400; margin-top: -2px; }
+
+    .score-bar-wrap { flex: 1; }
+    .score-bar-bg { background: var(--border); border-radius: 4px; height: 6px; margin-bottom: 6px; overflow: hidden; }
+    .score-bar-fill { height: 100%; border-radius: 4px; transition: width 0.5s ease; }
+
+    .sub-scores {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 8px;
+      margin-bottom: 14px;
+    }
+    .sub-item { text-align: center; }
+    .sub-item .s-label { font-size: 0.68rem; color: var(--muted); }
+    .sub-item .s-val { font-size: 0.9rem; font-weight: 600; }
+
+    .alerts { display: flex; flex-direction: column; gap: 5px; }
+    .alert-item {
+      font-size: 0.75rem;
+      padding: 5px 9px;
+      border-radius: 6px;
+      border-left: 3px solid;
+    }
+    .alert-critical { background: rgba(239,68,68,0.1); border-color: var(--red); color: #fca5a5; }
+    .alert-warning   { background: rgba(249,115,22,0.1); border-color: var(--orange); color: #fdba74; }
+
+    /* Detail panel */
+    #detail-panel {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 24px;
+      margin-top: 24px;
+      display: none;
+    }
+    #detail-panel.open { display: block; }
+    #detail-panel h3 { font-size: 1rem; margin-bottom: 16px; font-weight: 600; }
+
+    .metrics-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+      gap: 12px;
+      margin-bottom: 20px;
+    }
+    .metric-item {
+      background: var(--bg);
+      border-radius: 8px;
+      padding: 12px;
+    }
+    .metric-item .m-label { font-size: 0.72rem; color: var(--muted); }
+    .metric-item .m-val { font-size: 1.1rem; font-weight: 600; margin-top: 2px; }
+
+    .workload-tags { display: flex; flex-wrap: wrap; gap: 8px; }
+    .workload-tag {
+      background: rgba(59,130,246,0.15);
+      border: 1px solid rgba(59,130,246,0.3);
+      color: #93c5fd;
+      font-size: 0.75rem;
+      padding: 4px 10px;
+      border-radius: 6px;
+    }
+
+    /* Workload recommender */
+    .recommender {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 20px;
+      margin-top: 24px;
+    }
+    .recommender h3 { font-size: 0.95rem; font-weight: 600; margin-bottom: 14px; }
+    .rec-controls { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+    .rec-controls select {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      color: var(--text);
+      padding: 8px 12px;
+      border-radius: 8px;
+      font-size: 0.85rem;
+      flex: 1;
+      min-width: 200px;
+    }
+    .rec-controls button {
+      background: #4f6ef7;
+      color: white;
+      border: none;
+      padding: 8px 18px;
+      border-radius: 8px;
+      font-size: 0.85rem;
+      cursor: pointer;
+      font-weight: 500;
+    }
+    .rec-controls button:hover { background: #3b5bdb; }
+    .rec-results { margin-top: 14px; display: flex; flex-wrap: wrap; gap: 10px; }
+    .rec-result-card {
+      background: var(--bg);
+      border-radius: 8px;
+      padding: 10px 14px;
+      font-size: 0.82rem;
+      border: 1px solid var(--border);
+    }
+    .rec-result-card .r-name { font-weight: 600; }
+    .rec-result-card .r-meta { color: var(--muted); margin-top: 2px; }
+
+    .color-green  { color: var(--green); }
+    .color-teal   { color: var(--teal); }
+    .color-blue   { color: var(--blue); }
+    .color-yellow { color: var(--yellow); }
+    .color-orange { color: var(--orange); }
+    .color-red    { color: var(--red); }
+
+    .bg-green  { background: rgba(34,197,94,0.15);  color: var(--green);  border: 1px solid rgba(34,197,94,0.3); }
+    .bg-teal   { background: rgba(20,184,166,0.15); color: var(--teal);   border: 1px solid rgba(20,184,166,0.3); }
+    .bg-blue   { background: rgba(59,130,246,0.15); color: var(--blue);   border: 1px solid rgba(59,130,246,0.3); }
+    .bg-yellow { background: rgba(234,179,8,0.15);  color: var(--yellow); border: 1px solid rgba(234,179,8,0.3); }
+    .bg-orange { background: rgba(249,115,22,0.15); color: var(--orange); border: 1px solid rgba(249,115,22,0.3); }
+    .bg-red    { background: rgba(239,68,68,0.15);  color: var(--red);    border: 1px solid rgba(239,68,68,0.3); }
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="live-dot"></div>
+  <div>
+    <h1>GPU Diagnostic Dashboard</h1>
+    <div class="subtitle">Health scoring · Tier classification · Workload routing</div>
+  </div>
+  <div class="last-update" id="last-update">Connecting...</div>
+</header>
+
+<main>
+  <!-- Summary bar -->
+  <div class="summary-bar" id="summary-bar">
+    <div class="stat-card"><div class="label">Total GPUs</div><div class="value" id="s-total">—</div></div>
+    <div class="stat-card"><div class="label">Avg Health Score</div><div class="value" id="s-avg">—</div><div class="sub">/100</div></div>
+    <div class="stat-card"><div class="label">Active Alerts</div><div class="value color-orange" id="s-alerts">—</div></div>
+    <div class="stat-card"><div class="label">Failed / RMA</div><div class="value color-red" id="s-failed">—</div></div>
+    <div class="stat-card">
+      <div class="label">Tier Distribution</div>
+      <div id="tier-dist" style="display:flex;gap:5px;flex-wrap:wrap;margin-top:8px;"></div>
+    </div>
+  </div>
+
+  <!-- GPU cards -->
+  <div class="section-title">Fleet Overview — live updates every 5s</div>
+  <div class="gpu-grid" id="gpu-grid"></div>
+
+  <!-- Detail panel -->
+  <div id="detail-panel">
+    <h3 id="detail-title">GPU Detail</h3>
+    <div class="metrics-grid" id="detail-metrics"></div>
+    <div class="section-title" style="margin-top:0">Recommended Workloads</div>
+    <div class="workload-tags" id="detail-workloads"></div>
+  </div>
+
+  <!-- Workload recommender -->
+  <div class="recommender">
+    <h3>Workload Recommender</h3>
+    <div class="rec-controls">
+      <select id="workload-select"></select>
+      <button onclick="recommend()">Find GPUs</button>
+    </div>
+    <div class="rec-results" id="rec-results"></div>
+  </div>
+</main>
+
+<script>
+  const API = 'http://localhost:8080';
+  let selectedUUID = null;
+  let allGPUs = [];
+
+  function colorClass(c) { return 'color-' + c; }
+  function bgClass(c) { return 'bg-' + c; }
+
+  function scoreColor(s) {
+    if (s >= 90) return 'green';
+    if (s >= 75) return 'teal';
+    if (s >= 60) return 'blue';
+    if (s >= 40) return 'yellow';
+    if (s >= 20) return 'orange';
+    return 'red';
+  }
+
+  function subScoreColor(v) {
+    if (v >= 80) return 'var(--green)';
+    if (v >= 60) return 'var(--teal)';
+    if (v >= 40) return 'var(--yellow)';
+    if (v >= 20) return 'var(--orange)';
+    return 'var(--red)';
+  }
+
+  function renderCard(gpu) {
+    const c = gpu.tier_color;
+    const sc = scoreColor(gpu.final_score);
+    const alertsHtml = gpu.alerts.slice(0, 2).map(a => {
+      const cls = a.startsWith('CRITICAL') ? 'alert-critical' : 'alert-warning';
+      return `<div class="alert-item ${cls}">${a.replace('CRITICAL: ','').replace('WARNING: ','')}</div>`;
+    }).join('');
+
+    const subHtml = Object.entries(gpu.sub_scores).map(([k, v]) =>
+      `<div class="sub-item">
+        <div class="s-label">${k}</div>
+        <div class="s-val" style="color:${subScoreColor(v)}">${v}</div>
+      </div>`
+    ).join('');
+
+    return `
+      <div class="gpu-card${selectedUUID === gpu.uuid ? ' selected' : ''}" onclick="selectGPU('${gpu.uuid}')" id="card-${gpu.uuid}">
+        <div class="gpu-card-header">
+          <div>
+            <div class="gpu-name">${gpu.label}</div>
+            <div class="gpu-model">${gpu.name}</div>
+          </div>
+          <span class="tier-badge ${bgClass(c)}">Tier ${gpu.tier} — ${gpu.tier_label}</span>
+        </div>
+        <div class="score-row">
+          <div class="score-circle ${colorClass(sc)}" style="border-color:var(--${sc})">
+            ${gpu.final_score}<span class="score-label">/ 100</span>
+          </div>
+          <div class="score-bar-wrap">
+            <div style="display:flex;justify-content:space-between;font-size:0.75rem;margin-bottom:4px;">
+              <span>Health Score</span>
+              <span class="${colorClass(sc)}">${gpu.final_score}</span>
+            </div>
+            <div class="score-bar-bg">
+              <div class="score-bar-fill" style="width:${gpu.final_score}%;background:var(--${sc})"></div>
+            </div>
+          </div>
+        </div>
+        <div class="sub-scores">${subHtml}</div>
+        ${alertsHtml ? `<div class="alerts">${alertsHtml}</div>` : ''}
+      </div>`;
+  }
+
+  async function fetchFleet() {
+    try {
+      const r = await fetch(`${API}/fleet/summary`);
+      const data = await r.json();
+      allGPUs = data.gpus;
+
+      document.getElementById('s-total').textContent = data.total;
+      document.getElementById('s-avg').textContent = data.average_score;
+      document.getElementById('s-alerts').textContent = data.critical_count;
+      document.getElementById('s-failed').textContent = data.failed_count;
+
+      const colors = ['green','teal','blue','yellow','orange','red'];
+      const dist = document.getElementById('tier-dist');
+      dist.innerHTML = Object.entries(data.by_tier).sort().map(([t, n]) =>
+        `<span class="tier-badge ${bgClass(colors[parseInt(t)-1])}" title="Tier ${t}">T${t}: ${n}</span>`
+      ).join('');
+
+      const grid = document.getElementById('gpu-grid');
+      grid.innerHTML = data.gpus.map(renderCard).join('');
+
+      document.getElementById('last-update').textContent =
+        'Updated ' + new Date().toLocaleTimeString();
+
+      if (selectedUUID) {
+        refreshDetail();
+      }
+    } catch (e) {
+      document.getElementById('last-update').textContent = 'Connection failed — is API running?';
+    }
+  }
+
+  async function selectGPU(uuid) {
+    selectedUUID = uuid;
+    document.querySelectorAll('.gpu-card').forEach(c => c.classList.remove('selected'));
+    const card = document.getElementById('card-' + uuid);
+    if (card) card.classList.add('selected');
+    await refreshDetail();
+    document.getElementById('detail-panel').scrollIntoView({behavior:'smooth', block:'nearest'});
+  }
+
+  async function refreshDetail() {
+    if (!selectedUUID) return;
+    try {
+      const r = await fetch(`${API}/gpu/${selectedUUID}/health`);
+      const g = await r.json();
+      const m = g.metrics;
+      document.getElementById('detail-panel').classList.add('open');
+      document.getElementById('detail-title').textContent = `${g.label} — ${g.name}`;
+
+      const items = [
+        ['Temperature', m.temperature_c + ' C'],
+        ['Power Draw', m.power_w + ' W / ' + m.power_limit_w + ' W'],
+        ['GPU Utilization', m.gpu_utilization_pct + ' %'],
+        ['VRAM Used', m.memory_used_gb + ' / ' + m.memory_total_gb + ' GB'],
+        ['SM Clock', m.sm_clock_mhz + ' MHz'],
+        ['Bandwidth', m.measured_bandwidth_tbs + ' / ' + m.rated_bandwidth_tbs + ' TB/s'],
+        ['ECC SBE Total', m.ecc_sbe_total],
+        ['ECC DBE Total', m.ecc_dbe_total],
+        ['Retired Pages (SBE)', m.retired_pages_sbe],
+        ['NVLink CRC Errors', m.nvlink_crc_errors],
+        ['Throttle Active', m.throttle_active ? 'YES' : 'No'],
+      ];
+      document.getElementById('detail-metrics').innerHTML = items.map(([l, v]) =>
+        `<div class="metric-item"><div class="m-label">${l}</div><div class="m-val">${v}</div></div>`
+      ).join('');
+
+      document.getElementById('detail-workloads').innerHTML =
+        g.recommended_workloads.length
+          ? g.recommended_workloads.map(w => `<span class="workload-tag">${w}</span>`).join('')
+          : '<span style="color:var(--red);font-size:0.85rem">No workloads recommended — GPU requires maintenance</span>';
+
+    } catch (e) {
+      console.error(e);
+    }
+  }
+
+  async function loadWorkloadTypes() {
+    try {
+      const r = await fetch(`${API}/workload/types`);
+      const types = await r.json();
+      const sel = document.getElementById('workload-select');
+      sel.innerHTML = types.map(t => `<option value="${t}">${t}</option>`).join('');
+    } catch (e) {}
+  }
+
+  async function recommend() {
+    const workload = document.getElementById('workload-select').value;
+    try {
+      const r = await fetch(`${API}/workload/recommend`, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({workload_type: workload})
+      });
+      const data = await r.json();
+      const results = document.getElementById('rec-results');
+      if (data.recommended.length === 0) {
+        results.innerHTML = '<span style="color:var(--muted);font-size:0.85rem">No GPUs meet requirements for this workload.</span>';
+      } else {
+        results.innerHTML = data.recommended.map(g =>
+          `<div class="rec-result-card">
+            <div class="r-name">${g.label}</div>
+            <div class="r-meta">${g.name} · ${g.vram_gb} GB VRAM</div>
+            <div class="r-meta">Score ${g.score} · Tier ${g.tier} (${g.tier_label})</div>
+          </div>`
+        ).join('');
+      }
+    } catch (e) {
+      document.getElementById('rec-results').innerHTML =
+        '<span style="color:var(--red)">Request failed</span>';
+    }
+  }
+
+  // Init
+  loadWorkloadTypes();
+  fetchFleet();
+  setInterval(fetchFleet, 5000);
+</script>
+</body>
+</html>
