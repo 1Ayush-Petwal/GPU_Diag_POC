@@ -158,13 +158,14 @@ def workload_recommend(body: dict, _: None = Depends(require_auth)):
 
 @app.get("/login")
 def login_page():
-    html_path = os.path.join(os.path.dirname(__file__), "login.html")
-    return FileResponse(html_path)
+    return FileResponse(os.path.join(os.path.dirname(__file__), "login.html"))
+
+
+@app.get("/dashboard")
+def dashboard_page():
+    return FileResponse(os.path.join(os.path.dirname(__file__), "dashboard.html"))
 
 
 @app.get("/")
 def root():
-    html_path = os.path.join(os.path.dirname(__file__), "dashboard.html")
-    if os.path.exists(html_path):
-        return FileResponse(html_path)
-    return {"message": "GPU Diagnostic API", "docs": "/docs", "fleet": "/fleet/summary"}
+    return FileResponse(os.path.join(os.path.dirname(__file__), "home.html"))

@@ -179,7 +179,7 @@
 <script>
   // If already logged in, skip login page
   if (localStorage.getItem('gpu_token')) {
-    window.location.href = '/';
+    window.location.href = '/dashboard';
   }
 
   function fillCreds(user, pass) {
@@ -208,7 +208,7 @@
       if (r.ok) {
         const data = await r.json();
         localStorage.setItem('gpu_token', data.token);
-        window.location.href = '/';
+        window.location.href = '/dashboard';
       } else {
         err.style.display = 'block';
         btn.disabled = false;
